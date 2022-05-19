@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 
 namespace CustomerDatabaseTutorial.App.ViewModels
 {
-    public class CustomerListPageViewModel
+    public class CustomerListPageViewModel : INotifyPropertyChanged
     {
         public CustomerListPageViewModel()
         {
@@ -18,8 +18,13 @@ namespace CustomerDatabaseTutorial.App.ViewModels
 
         private ObservableCollection<CustomerViewModel> _customers = new ObservableCollection<CustomerViewModel>();
 
+
         public ObservableCollection<CustomerViewModel> Customers { get => _customers; }
 
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        public void OnPropertyChanged([CallerMemberName] string propertyName = null) =>
+             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
         private CustomerViewModel _selectedCustomer;
 
@@ -31,13 +36,50 @@ namespace CustomerDatabaseTutorial.App.ViewModels
                 if (_selectedCustomer != value)
                 {
                     _selectedCustomer = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private bool _addingNewCustomer = false;
+
+        public bool AddingNewCustomer
+        {
+            get => _addingNewCustomer;
+            set
+            {
+                if (_addingNewCustomer != value)
+                {
+                    _addingNewCustomer = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(EnableCommandBar));
+                }
+            }
+        }
+
+        public bool EnableCommandBar => !AddingNewCustomer;
+
+        private CustomerViewModel _newCustomer;
+
+        public CustomerViewModel NewCustomer
+        {
+            get => _newCustomer;
+            set
+            {
+                if (_newCustomer != value)
+                {
+                    _newCustomer = value;
+                    OnPropertyChanged();
                 }
             }
         }
 
         public async Task CreateNewCustomerAsync()
         {
-            // Update this method
+            CustomerViewModel newCustomer = new CustomerViewModel(new Models.Customer());
+            NewCustomer = newCustomer;
+            await App.Repository.Customers.UpsertAsync(NewCustomer.Model);
+            AddingNewCustomer = true;
         }
 
 
@@ -46,24 +88,57 @@ namespace CustomerDatabaseTutorial.App.ViewModels
             // Update this method
         }
 
+        public async Task DeleteNewCustomerAsync()
+        {
+            if (NewCustomer != null)
+            {
+                await App.Repository.Customers.DeleteAsync(_newCustomer.Model.Id);
+                AddingNewCustomer = false;
+            }
+        }
+
         public async void DeleteAndUpdateAsync()
         {
-            // Update this method
+            if (SelectedCustomer != null)
+            {
+                await App.Repository.Customers.DeleteAsync(_selectedCustomer.Model.Id);
+            }
+            await UpdateCustomersAsync();
         }
 
         public async Task GetCustomerListAsync()
         {
-            // Update this method
+            var customers = await App.Repository.Customers.GetAsync();
+            if (customers == null)
+            {
+                return;
+            }
+            await DispatcherHelper.ExecuteOnUIThreadAsync(() =>
+            {
+                Customers.Clear();
+                foreach (var c in customers)
+                {
+                    Customers.Add(new CustomerViewModel(c));
+                }
+            });
         }
 
         public async Task SaveInitialChangesAsync()
         {
-            // Update this method
+            await App.Repository.Customers.UpsertAsync(NewCustomer.Model);
+            await UpdateCustomersAsync();
+            AddingNewCustomer = false;
         }
 
         public async Task UpdateCustomersAsync()
         {
-            // Update this method
+            foreach (var modifiedCustomer in Customers
+                .Where(x => x.IsModified).Select(x => x.Model))
+            {
+                await App.Repository.Customers.UpsertAsync(modifiedCustomer);
+            }
+            await GetCustomerListAsync();
         }
+
     }
 }
